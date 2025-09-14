@@ -207,4 +207,202 @@ router.get('/reverse/:address', async (req, res) => {
   }
 })
 
+/**
+ * GET /ens/records/:ensName?texts=key1,key2&coins=ETH,BTC
+ * Get ENS records for a domain name
+ */
+router.get('/records/:ensName', async (req, res) => {
+  try {
+    const { ensName } = req.params
+    const { texts, coins } = req.query
+    
+    // Validate ENS name format
+    if (!ensName || !ensName.endsWith('.eth')) {
+      return res.status(400).json({ 
+        error: 'Invalid ENS name format. Must end with .eth',
+        example: 'myname.eth'
+      })
+    }
+
+    const service = initializeENSService()
+    if (!service) {
+      return res.status(503).json({
+        error: 'ENS service unavailable',
+        message: 'Unable to connect to blockchain network'
+      })
+    }
+
+    // Parse query parameters
+    const textKeys = texts ? (texts as string).split(',').map(k => k.trim()) : []
+    const coinTypes = coins ? (coins as string).split(',').map(c => c.trim()) : []
+
+    const records = await service.getENSRecords(ensName, textKeys, coinTypes)
+    
+    res.json({
+      ensName,
+      records,
+      queried_at: new Date().toISOString()
+    })
+  } catch (error) {
+    console.error('ENS records retrieval error:', error)
+    res.status(500).json({ 
+      error: 'Failed to get ENS records',
+      message: (error as Error).message 
+    })
+  }
+})
+
+/**
+ * GET /ens/text/:ensName/:key
+ * Get a specific text record from an ENS name
+ */
+router.get('/text/:ensName/:key', async (req, res) => {
+  try {
+    const { ensName, key } = req.params
+    
+    // Validate ENS name format
+    if (!ensName || !ensName.endsWith('.eth')) {
+      return res.status(400).json({ 
+        error: 'Invalid ENS name format. Must end with .eth',
+        example: 'myname.eth'
+      })
+    }
+
+    if (!key || key.trim() === '') {
+      return res.status(400).json({ 
+        error: 'Text record key is required',
+        example: 'email'
+      })
+    }
+
+    const service = initializeENSService()
+    if (!service) {
+      return res.status(503).json({
+        error: 'ENS service unavailable',
+        message: 'Unable to connect to blockchain network'
+      })
+    }
+
+    const value = await service.getENSTextRecord(ensName, key)
+    
+    if (value !== null) {
+      res.json({
+        ensName,
+        key,
+        value,
+        retrieved_at: new Date().toISOString()
+      })
+    } else {
+      res.status(404).json({
+        ensName,
+        key,
+        error: 'Text record not found',
+        retrieved_at: new Date().toISOString()
+      })
+    }
+  } catch (error) {
+    console.error('ENS text record retrieval error:', error)
+    res.status(500).json({ 
+      error: 'Failed to get ENS text record',
+      message: (error as Error).message 
+    })
+  }
+})
+
+/**
+ * GET /ens/coin/:ensName/:coinType
+ * Get a coin address record from an ENS name
+ */
+router.get('/coin/:ensName/:coinType', async (req, res) => {
+  try {
+    const { ensName, coinType } = req.params
+    
+    // Validate ENS name format
+    if (!ensName || !ensName.endsWith('.eth')) {
+      return res.status(400).json({ 
+        error: 'Invalid ENS name format. Must end with .eth',
+        example: 'myname.eth'
+      })
+    }
+
+    if (!coinType || coinType.trim() === '') {
+      return res.status(400).json({ 
+        error: 'Coin type is required',
+        example: 'ETH'
+      })
+    }
+
+    const service = initializeENSService()
+    if (!service) {
+      return res.status(503).json({
+        error: 'ENS service unavailable',
+        message: 'Unable to connect to blockchain network'
+      })
+    }
+
+    const address = await service.getENSCoinRecord(ensName, coinType.toUpperCase())
+    
+    if (address !== null) {
+      res.json({
+        ensName,
+        coinType: coinType.toUpperCase(),
+        address,
+        retrieved_at: new Date().toISOString()
+      })
+    } else {
+      res.status(404).json({
+        ensName,
+        coinType: coinType.toUpperCase(),
+        error: 'Coin record not found',
+        retrieved_at: new Date().toISOString()
+      })
+    }
+  } catch (error) {
+    console.error('ENS coin record retrieval error:', error)
+    res.status(500).json({ 
+      error: 'Failed to get ENS coin record',
+      message: (error as Error).message 
+    })
+  }
+})
+
+/**
+ * GET /ens/owner/:ensName
+ * Get ENS ownership information
+ */
+router.get('/owner/:ensName', async (req, res) => {
+  try {
+    const { ensName } = req.params
+    
+    // Validate ENS name format
+    if (!ensName || !ensName.endsWith('.eth')) {
+      return res.status(400).json({ 
+        error: 'Invalid ENS name format. Must end with .eth',
+        example: 'myname.eth'
+      })
+    }
+
+    const service = initializeENSService()
+    if (!service) {
+      return res.status(503).json({
+        error: 'ENS service unavailable',
+        message: 'Unable to connect to blockchain network'
+      })
+    }
+
+    const ownershipInfo = await service.getENSOwnershipInfo(ensName)
+    
+    res.json({
+      ...ownershipInfo,
+      checked_at: new Date().toISOString()
+    })
+  } catch (error) {
+    console.error('ENS ownership check error:', error)
+    res.status(500).json({ 
+      error: 'Failed to check ENS ownership',
+      message: (error as Error).message 
+    })
+  }
+})
+
 export default router

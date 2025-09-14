@@ -114,6 +114,91 @@ curl http://localhost:3000/ens/reverse/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA9604
 }
 ```
 
+### GET `/ens/records/:ensName?texts=key1,key2&coins=ETH,BTC`
+Get ENS records for a domain name.
+
+**Parameters:**
+- `texts` (optional): Comma-separated list of text record keys to fetch
+- `coins` (optional): Comma-separated list of coin types to fetch
+
+**Example:**
+```bash
+curl "http://localhost:3000/ens/records/myname.eth?texts=email,url&coins=ETH,BTC"
+```
+
+**Response:**
+```json
+{
+  "ensName": "myname.eth",
+  "records": {
+    "texts": [
+      {"key": "email", "value": "user@example.com"},
+      {"key": "url", "value": "https://example.com"}
+    ],
+    "coins": [
+      {"coin": "ETH", "value": "0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f"},
+      {"coin": "BTC", "value": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"}
+    ]
+  },
+  "queried_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### GET `/ens/text/:ensName/:key`
+Get a specific text record from an ENS name.
+
+**Example:**
+```bash
+curl http://localhost:3000/ens/text/myname.eth/email
+```
+
+**Response:**
+```json
+{
+  "ensName": "myname.eth",
+  "key": "email",
+  "value": "user@example.com",
+  "retrieved_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### GET `/ens/coin/:ensName/:coinType`
+Get a coin address record from an ENS name.
+
+**Example:**
+```bash
+curl http://localhost:3000/ens/coin/myname.eth/ETH
+```
+
+**Response:**
+```json
+{
+  "ensName": "myname.eth",
+  "coinType": "ETH",
+  "address": "0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f",
+  "retrieved_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### GET `/ens/owner/:ensName`
+Get ENS ownership information.
+
+**Example:**
+```bash
+curl http://localhost:3000/ens/owner/myname.eth
+```
+
+**Response:**
+```json
+{
+  "ensName": "myname.eth",
+  "owner": "0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f",
+  "isOwnedByWallet": false,
+  "resolvedAddress": "0x123456789abcdef123456789abcdef123456789a",
+  "checked_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
 ## Secure Wallet Service
 
 For security reasons, wallet functionality is **not exposed via API endpoints**. Instead, the `WalletService` class provides secure blockchain interaction capabilities for internal use only.
@@ -165,6 +250,23 @@ if (walletService.isReady()) {
 - `resolveENS(ensName)`: Resolve an ENS name to an address
 - `reverseResolveENS(address)`: Get the ENS name for an address (reverse resolution)
 
+#### ENS Record Management Operations
+- `setENSRecords(recordUpdate)`: Set multiple ENS records (texts and coins) for a domain
+- `setENSTextRecord(ensName, key, value, resolverAddress?)`: Set a single text record
+- `setENSTextRecords(ensName, textRecords, resolverAddress?)`: Set multiple text records
+- `setENSCoinRecord(ensName, coin, address, resolverAddress?)`: Set a coin address record
+- `getENSRecords(ensName, textKeys?, coinTypes?)`: Get ENS records for a domain
+- `getENSTextRecord(ensName, key)`: Get a specific text record
+- `getENSTextRecords(ensName, keys)`: Get multiple text records
+- `getENSCoinRecord(ensName, coin)`: Get a coin address record
+
+#### ENS Ownership Management Operations
+- `getENSOwner(ensName)`: Get the owner address of an ENS name
+- `transferENSOwnership(ensName, newOwner)`: Transfer ENS ownership to a new address
+- `registerENSAndTransfer(ensName, targetAddress, durationInYears?)`: Register ENS and transfer ownership in one operation
+- `isENSOwner(ensName)`: Check if current wallet owns the ENS name
+- `getENSOwnershipInfo(ensName)`: Get comprehensive ownership information
+
 ### ENS Registration Example
 
 ```typescript
@@ -203,7 +305,149 @@ console.log('Address resolves to ENS:', ensName)
 - ENS registration requires a two-step process (commit-reveal) for security
 - There's a mandatory waiting period (usually 1 minute) between commit and registration
 - Registration requires payment in ETH - ensure your wallet has sufficient balance
-- Only works on Ethereum mainnet (ENS contracts are not deployed on testnets in the same way)
+- Updated to work with Sepolia testnet for testing purposes
+
+### ENS Record Management Example
+
+```typescript
+import { WalletService } from './src/wallet-service'
+
+const walletService = new WalletService(privateKey, rpcUrl)
+
+// Set a single text record
+await walletService.setENSTextRecord('myname.eth', 'email', 'user@example.com')
+
+// Set multiple text records at once
+await walletService.setENSTextRecords('myname.eth', [
+  { key: 'email', value: 'user@example.com' },
+  { key: 'url', value: 'https://example.com' },
+  { key: 'avatar', value: 'https://example.com/avatar.png' }
+])
+
+// Set a coin address record
+await walletService.setENSCoinRecord('myname.eth', 'ETH', '0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f')
+
+// Set multiple records (texts and coins) in one transaction
+await walletService.setENSRecords({
+  name: 'myname.eth',
+  texts: [
+    { key: 'email', value: 'user@example.com' },
+    { key: 'description', value: 'My ENS profile' }
+  ],
+  coins: [
+    { coin: 'ETH', value: '0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f' },
+    { coin: 'BTC', value: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa' }
+  ]
+})
+
+// Get text records
+const email = await walletService.getENSTextRecord('myname.eth', 'email')
+const textRecords = await walletService.getENSTextRecords('myname.eth', ['email', 'url'])
+
+// Get coin records
+const ethAddress = await walletService.getENSCoinRecord('myname.eth', 'ETH')
+
+// Get all records at once
+const allRecords = await walletService.getENSRecords(
+  'myname.eth', 
+  ['email', 'url'], 
+  ['ETH', 'BTC']
+)
+```
+
+### ENS Ownership Transfer Examples
+
+```typescript
+import { WalletService } from './src/wallet-service'
+
+const walletService = new WalletService(privateKey, rpcUrl)
+
+// Example 1: Register ENS with system wallet keeping ownership
+const tx1 = await walletService.registerENS('myname.eth', '0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f', 1)
+// Result: System wallet owns the ENS, ENS points to target address
+
+// Example 2: Register ENS and immediately transfer ownership to target
+const result = await walletService.registerENSAndTransfer(
+  'myname.eth', 
+  '0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f', 
+  1
+)
+console.log('Registration TX:', result.registrationTx)
+console.log('Transfer TX:', result.transferTx)
+// Result: Target address owns the ENS AND ENS points to target address
+
+// Example 3: Transfer ownership of existing ENS
+await walletService.transferENSOwnership('myname.eth', '0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f')
+
+// Example 4: Check ownership information
+const ownershipInfo = await walletService.getENSOwnershipInfo('myname.eth')
+console.log('Owner:', ownershipInfo.owner)
+console.log('Resolves to:', ownershipInfo.resolvedAddress)
+console.log('Owned by wallet:', ownershipInfo.isOwnedByWallet)
+
+// Example 5: Check if current wallet owns an ENS
+const isOwner = await walletService.isENSOwner('myname.eth')
+console.log('Do we own this ENS?', isOwner)
+
+// Example 6: Get just the owner address
+const owner = await walletService.getENSOwner('myname.eth')
+console.log('ENS owner:', owner)
+```
+
+### ENS Ownership Scenarios
+
+#### **Scenario A: System Keeps Ownership (Default)**
+```typescript
+// Register ENS - system wallet becomes owner
+await walletService.registerENS('user.eth', userAddress, 1)
+
+// Ownership result:
+// - Owner: System wallet (can manage, renew, transfer)
+// - Resolves to: User address (receives transactions)
+// - User control: None (user cannot change anything)
+```
+
+#### **Scenario B: Transfer Ownership to User**
+```typescript
+// Register and transfer - user becomes owner
+await walletService.registerENSAndTransfer('user.eth', userAddress, 1)
+
+// Ownership result:
+// - Owner: User address (full control)
+// - Resolves to: User address (receives transactions)  
+// - System control: None (cannot help with renewals/changes)
+```
+
+#### **Scenario C: Separate Owner and Target**
+```typescript
+// Register for one address, transfer to another
+await walletService.registerENS('user.eth', targetAddress, 1)
+await walletService.transferENSOwnership('user.eth', ownerAddress)
+
+// Ownership result:
+// - Owner: Owner address (can manage ENS)
+// - Resolves to: Target address (receives transactions)
+// - Flexible: Owner and target can be different
+```
+
+### Security Considerations for ENS Ownership
+
+#### **System Ownership (Recommended for most apps):**
+- ✅ **Service Control**: Can manage renewals and updates
+- ✅ **User Support**: Can help users with ENS issues
+- ✅ **Consistency**: Uniform management across all ENS names
+- ⚠️ **Centralized**: Users don't own their ENS names
+
+#### **User Ownership (For decentralized apps):**
+- ✅ **True Ownership**: Users have full control
+- ✅ **Decentralized**: No single point of control
+- ⚠️ **User Responsibility**: Users must handle renewals
+- ⚠️ **Support Limitations**: Cannot help with user-owned ENS
+
+#### **Hybrid Approach:**
+- Register with system ownership by default
+- Offer optional ownership transfer for advanced users
+- Provide clear warnings about responsibilities
 
 ## Quick Start
 
