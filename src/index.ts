@@ -44,9 +44,63 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
 app.use('/ens', ensRouter)
 app.use('/group', groupRouter)
 
-// API Routes
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' })
+// Health check and monitoring endpoints
+app.get('/health', async (_req, res) => {
+  const healthCheck = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    version: process.env.npm_package_version || '1.0.0',
+    services: {
+      walletService: walletService ? 'connected' : 'disconnected',
+      database: 'unknown' // Will be updated if database checks are added
+    }
+  }
+
+  try {
+    // Test database connection if available
+    if (fs.existsSync(path.join(__dirname, '../groups.db'))) {
+      healthCheck.services.database = 'connected'
+    }
+    
+    res.status(200).json(healthCheck)
+  } catch (error) {
+    healthCheck.status = 'error'
+    healthCheck.services.database = 'error'
+    res.status(503).json(healthCheck)
+  }
+})
+
+app.get('/health/ready', (_req, res) => {
+  // Readiness probe - check if app is ready to serve traffic
+  const ready = walletService !== null
+  res.status(ready ? 200 : 503).json({ 
+    ready,
+    timestamp: new Date().toISOString()
+  })
+})
+
+app.get('/health/live', (_req, res) => {
+  // Liveness probe - check if app is alive
+  res.status(200).json({ 
+    alive: true,
+    timestamp: new Date().toISOString()
+  })
+})
+
+app.get('/metrics', (_req, res) => {
+  // Basic metrics endpoint for monitoring
+  const metrics = {
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    cpu: process.cpuUsage(),
+    environment: process.env.NODE_ENV || 'development',
+    version: process.env.npm_package_version || '1.0.0'
+  }
+  
+  res.json(metrics)
 })
 
 app.listen(port, () => {
