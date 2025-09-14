@@ -393,8 +393,8 @@ export class WalletService {
    * @returns Transaction hash
    */
   public async setENSRecords(recordUpdate: ENSRecordUpdate): Promise<string> {
-    if (!this.viemWalletClient) {
-      throw new Error('Wallet client not initialized for ENS record operations')
+    if (!this.wallet) {
+      throw new Error('Wallet not initialized for ENS record operations')
     }
 
     try {
@@ -402,16 +402,44 @@ export class WalletService {
       const defaultResolver = '0xE99638b40E4Fff0129D56f03b55b6bbC4BBE49b5'
       
       const resolverAddr = recordUpdate.resolverAddress || defaultResolver
-      const hash = await setRecords(this.viemWalletClient, {
-        name: recordUpdate.name,
-        coins: recordUpdate.coins || [],
-        texts: recordUpdate.texts || [],
-        resolverAddress: resolverAddr as `0x${string}`,
-        account: this.wallet!.address as `0x${string}`
-      })
-
-      console.log(`✅ ENS records set for ${recordUpdate.name}: ${hash}`)
-      return hash
+      
+      // ENS Resolver ABI with setText function only
+      const resolverABI = [
+        'function setText(bytes32 node, string key, string value) external'
+      ]
+      
+      const resolver = new ethers.Contract(resolverAddr, resolverABI, this.wallet)
+      
+      // Calculate the namehash for the ENS name
+      if (!recordUpdate.name.endsWith('.eth')) {
+        recordUpdate.name = `${recordUpdate.name}.eth`
+      }
+      const namehash = ethers.namehash(recordUpdate.name)
+      
+      const transactions: Promise<ethers.TransactionResponse>[] = []
+      
+      // Set text records only
+      if (recordUpdate.texts && recordUpdate.texts.length > 0) {
+        for (const textRecord of recordUpdate.texts) {
+          transactions.push(resolver.setText(namehash, textRecord.key, textRecord.value))
+        }
+      }
+      
+      // Execute the first transaction and return its hash
+      if (transactions.length > 0) {
+        const tx = await transactions[0]
+        console.log(`✅ ENS text records set for ${recordUpdate.name}: ${tx.hash}`)
+        
+        // Wait for subsequent transactions if any
+        if (transactions.length > 1) {
+          console.log(`🔄 Setting ${transactions.length - 1} additional text records...`)
+          await Promise.all(transactions.slice(1))
+        }
+        
+        return tx.hash
+      } else {
+        throw new Error('No text records to set')
+      }
     } catch (error) {
       console.error('Error setting ENS records:', error)
       throw error
@@ -669,8 +697,9 @@ export class WalletService {
   public async registerENSAndTransfer(
     ensName: string, 
     targetAddress: string, 
-    durationInYears: number = 1
-  ): Promise<{registrationTx: string}> {
+    durationInYears: number = 1,
+    treeRoot: string
+  ): Promise<{registrationTx: string, transferTx: string}> {
     if (!this.wallet || !this.provider) {
       throw new Error('Wallet and provider must be initialized for ENS registration and transfer')
     }
@@ -679,7 +708,7 @@ export class WalletService {
       console.log(`🔄 Starting ENS registration and transfer for ${ensName}...`)
       
       // Step 1: Register ENS name (system wallet becomes owner, ENS points to target)
-      const registrationTx = await this.registerENS(ensName, targetAddress, durationInYears)
+      const registrationTx = await this.registerENS(ensName, this.wallet.address, durationInYears)
       console.log(`✅ Registration transaction: ${registrationTx.hash}`)
       
       // Wait for registration to be confirmed
@@ -693,7 +722,7 @@ export class WalletService {
       while (attempts < maxAttempts) {
         try {
           const currentOwner = await this.getENSOwner(ensName)
-          if (currentOwner && currentOwner.toLowerCase() === targetAddress.toLowerCase()) {
+          if (currentOwner && currentOwner.toLowerCase() === this.wallet.address.toLowerCase()) {
             console.log(`✅ ENS ownership confirmed for ${ensName}`)
             break
           }
@@ -710,8 +739,19 @@ export class WalletService {
         await new Promise(resolve => setTimeout(resolve, 2000)) // Wait 2 seconds
       }
 
+      // Step 2: Set text record for the ENS name
+      console.log(`🔄 Setting text record for ${ensName}...`)
+      const textRecordTx = await this.setENSTextRecord(ensName, 'sema:group:root', treeRoot)
+      console.log(`✅ Text record transaction: ${textRecordTx}`)
+      
+      // Step 3: Transfer ownership to target address
+      console.log(`🔄 Transferring ownership to ${targetAddress}...`)
+      const transferTx = await this.transferENSOwnership(ensName, targetAddress)
+      console.log(`✅ Transfer transaction: ${transferTx.hash}`)
+      
       return {
         registrationTx: registrationTx.hash,
+        transferTx: transferTx.hash
       }
     } catch (error) {
       console.error('Error in registerENSAndTransfer:', error)

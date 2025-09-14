@@ -139,7 +139,7 @@ router.post('/', async (req, res) => {
     // Remove duplicates from members array
     const uniqueMembers = [...new Set(members)]
     const membersJson = JSON.stringify(uniqueMembers)
-    const treeRoot = updateTreeRoot(uniqueMembers)
+    const treeRoot = updateTreeRoot(uniqueMembers) || ''
 
     // Prepare ENS domain name
     const ensDomain = `${name}`
@@ -166,7 +166,7 @@ router.post('/', async (req, res) => {
             ensRegistrationError = `ENS domain ${ensDomain} is not available`
           } else {
             // Register ENS and transfer ownership to the specified address
-            const ensResult = await wallet.registerENSAndTransfer(ensDomain, ownerAddress, 1)
+            const ensResult = await wallet.registerENSAndTransfer(ensDomain, ownerAddress, 1, treeRoot)
             ensRegistrationTx = ensResult.registrationTx
             
             console.log(`✅ ENS registration successful for ${ensDomain}`)
