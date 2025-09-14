@@ -7,6 +7,7 @@ import * as yaml from 'js-yaml'
 import * as path from 'path'
 import { WalletService } from './wallet-service'
 import ensRouter from './routes/ens'
+import groupRouter from './routes/group'
 
 // Export Merkle Tree package and WalletService
 export { MerkleTree, MerkleProof } from './merkle-tree'
@@ -41,6 +42,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
 
 // Mount route modules
 app.use('/ens', ensRouter)
+app.use('/group', groupRouter)
 
 // API Routes
 app.get('/health', (_req, res) => {
