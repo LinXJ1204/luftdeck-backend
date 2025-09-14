@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Luftdeck Backend API
   version: 1.0.0
-  description: Basic API with health endpoint
+  description: Merkle Tree Package with Secure Blockchain Service and ENS Integration
 servers:
   - url: http://localhost:3000
 paths:
@@ -20,3 +20,201 @@ paths:
                   status:
                     type: string
                     example: ok
+
+  /ens/available/{ensName}:
+    get:
+      summary: Check ENS name availability
+      description: Check if an ENS name is available for registration
+      parameters:
+        - name: ensName
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "myname.eth"
+          description: The ENS name to check (must end with .eth)
+      responses:
+        '200':
+          description: ENS availability status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ensName:
+                    type: string
+                    example: "myname.eth"
+                  available:
+                    type: boolean
+                    example: true
+                  checked_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00.000Z"
+        '400':
+          description: Invalid ENS name format
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Invalid ENS name format. Must end with .eth"
+                  example:
+                    type: string
+                    example: "myname.eth"
+        '500':
+          description: Server error
+
+  /ens/price/{ensName}:
+    get:
+      summary: Get ENS registration price
+      description: Get the registration price for an ENS name
+      parameters:
+        - name: ensName
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "myname.eth"
+          description: The ENS name to check pricing for
+        - name: years
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 1
+          example: 1
+          description: Registration duration in years
+      responses:
+        '200':
+          description: ENS registration price
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ensName:
+                    type: string
+                    example: "myname.eth"
+                  duration_years:
+                    type: integer
+                    example: 1
+                  price_eth:
+                    type: string
+                    example: "0.0031"
+                  checked_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00.000Z"
+        '400':
+          description: Invalid parameters
+        '500':
+          description: Server error
+
+  /ens/resolve/{ensName}:
+    get:
+      summary: Resolve ENS name to address
+      description: Resolve an ENS name to its corresponding Ethereum address
+      parameters:
+        - name: ensName
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "vitalik.eth"
+          description: The ENS name to resolve
+      responses:
+        '200':
+          description: Successfully resolved ENS name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ensName:
+                    type: string
+                    example: "vitalik.eth"
+                  address:
+                    type: string
+                    example: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+                  resolved_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00.000Z"
+        '404':
+          description: ENS name not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ensName:
+                    type: string
+                    example: "nonexistent.eth"
+                  error:
+                    type: string
+                    example: "ENS name not found or not configured"
+                  resolved_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00.000Z"
+        '400':
+          description: Invalid ENS name format
+        '500':
+          description: Server error
+
+  /ens/reverse/{address}:
+    get:
+      summary: Reverse resolve address to ENS name
+      description: Get the ENS name for an Ethereum address (reverse resolution)
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+          description: The Ethereum address to reverse resolve
+      responses:
+        '200':
+          description: Successfully reverse resolved address
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                    example: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+                  ensName:
+                    type: string
+                    example: "vitalik.eth"
+                  resolved_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00.000Z"
+        '404':
+          description: No ENS name found for address
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                    example: "0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f"
+                  error:
+                    type: string
+                    example: "No ENS name found for this address"
+                  resolved_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00.000Z"
+        '400':
+          description: Invalid address format
+        '500':
+          description: Server error

@@ -11,12 +11,199 @@ A comprehensive Merkle tree implementation for group membership management, wher
 - ✅ **Dynamic Updates**: Add/remove members and update groups
 - ✅ **Large Group Support**: Handles groups of any size efficiently
 - ✅ **TypeScript Support**: Full type safety and IntelliSense
+- ✅ **Blockchain Integration**: Built-in support for Ethereum blockchain interaction with ethers.js
 
 ## Installation
 
 ```bash
 npm install
 ```
+
+## Environment Setup
+
+Create a `.env` file in the root directory with the following variables:
+
+```env
+# Server Configuration
+PORT=3000
+
+# Blockchain Configuration
+# Your private key for blockchain interactions (without 0x prefix)
+# NEVER commit your actual private key to version control
+PRIVATE_KEY=your_private_key_here
+
+# Optional: RPC URL for blockchain connection
+# RPC_URL=https://your-rpc-endpoint-here
+```
+
+**Important**: Never commit your actual private key to version control. The `.env` file is already in `.gitignore` to prevent accidental commits.
+
+## ENS API Endpoints
+
+The application provides secure REST API endpoints for ENS (Ethereum Name Service) operations. These endpoints are read-only and do not expose sensitive wallet functionality.
+
+### GET `/ens/available/:ensName`
+Check if an ENS name is available for registration.
+
+**Example:**
+```bash
+curl http://localhost:3000/ens/available/myname.eth
+```
+
+**Response:**
+```json
+{
+  "ensName": "myname.eth",
+  "available": true,
+  "checked_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### GET `/ens/price/:ensName?years=1`
+Get the registration price for an ENS name.
+
+**Parameters:**
+- `years` (optional): Registration duration in years (1-10, default: 1)
+
+**Example:**
+```bash
+curl http://localhost:3000/ens/price/myname.eth?years=2
+```
+
+**Response:**
+```json
+{
+  "ensName": "myname.eth",
+  "duration_years": 2,
+  "price_eth": "0.0062",
+  "checked_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### GET `/ens/resolve/:ensName`
+Resolve an ENS name to its Ethereum address.
+
+**Example:**
+```bash
+curl http://localhost:3000/ens/resolve/vitalik.eth
+```
+
+**Response:**
+```json
+{
+  "ensName": "vitalik.eth",
+  "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "resolved_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### GET `/ens/reverse/:address`
+Reverse resolve an Ethereum address to its ENS name.
+
+**Example:**
+```bash
+curl http://localhost:3000/ens/reverse/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+```
+
+**Response:**
+```json
+{
+  "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "ensName": "vitalik.eth",
+  "resolved_at": "2024-01-15T10:30:00.000Z"
+}
+```
+
+## Secure Wallet Service
+
+For security reasons, wallet functionality is **not exposed via API endpoints**. Instead, the `WalletService` class provides secure blockchain interaction capabilities for internal use only.
+
+### Using WalletService
+
+```typescript
+import { WalletService } from './src/wallet-service'
+
+// Initialize with private key and RPC URL
+const walletService = new WalletService(privateKey, rpcUrl)
+
+// Check if wallet is ready
+if (walletService.isReady()) {
+  // Get wallet address
+  const address = walletService.getAddress()
+  
+  // Get balance
+  const balance = await walletService.getBalance()
+  
+  // Send transaction
+  const tx = await walletService.sendTransaction(
+    "0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f", 
+    "0.1"
+  )
+  
+  // Wait for confirmation
+  const receipt = await walletService.waitForTransaction(tx.hash)
+}
+```
+
+### WalletService Methods
+
+#### Core Wallet Operations
+- `getAddress()`: Get wallet address
+- `getBalance(address?)`: Get ETH balance for address
+- `sendTransaction(to, value, data?)`: Send ETH transaction
+- `sendTransactionWithGasEstimation(to, value, data?)`: Send transaction with automatic gas estimation
+- `signMessage(message)`: Sign a message
+- `getTransactionReceipt(txHash)`: Get transaction receipt
+- `waitForTransaction(txHash, confirmations?)`: Wait for transaction confirmation
+- `getGasPrice()`: Get current gas price
+- `isReady()`: Check if wallet is initialized and ready
+
+#### ENS (Ethereum Name Service) Operations
+- `registerENS(ensName, targetAddress, durationInYears?)`: Register a new ENS name for an address
+- `isENSAvailable(ensName)`: Check if an ENS name is available for registration
+- `getENSRegistrationPrice(ensName, durationInYears?)`: Get the registration price for an ENS name
+- `resolveENS(ensName)`: Resolve an ENS name to an address
+- `reverseResolveENS(address)`: Get the ENS name for an address (reverse resolution)
+
+### ENS Registration Example
+
+```typescript
+import { WalletService } from './src/wallet-service'
+
+const walletService = new WalletService(privateKey, rpcUrl)
+
+// Check if an ENS name is available
+const isAvailable = await walletService.isENSAvailable('myname.eth')
+console.log('Available:', isAvailable)
+
+// Get registration price
+const price = await walletService.getENSRegistrationPrice('myname.eth', 1) // 1 year
+console.log('Registration price:', price, 'ETH')
+
+// Register ENS name for a specific address
+if (isAvailable) {
+  const targetAddress = '0x742d35Cc6634C0532925a3b8D8F7E4D9f45F8b5f'
+  const tx = await walletService.registerENS('myname.eth', targetAddress, 1)
+  
+  // Wait for registration to complete
+  const receipt = await walletService.waitForTransaction(tx.hash)
+  console.log('ENS registered successfully!', receipt?.status)
+}
+
+// Resolve ENS name to address
+const resolvedAddress = await walletService.resolveENS('vitalik.eth')
+console.log('vitalik.eth resolves to:', resolvedAddress)
+
+// Reverse resolve address to ENS name
+const ensName = await walletService.reverseResolveENS('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+console.log('Address resolves to ENS:', ensName)
+```
+
+**Important Notes for ENS Registration:**
+- ENS registration requires a two-step process (commit-reveal) for security
+- There's a mandatory waiting period (usually 1 minute) between commit and registration
+- Registration requires payment in ETH - ensure your wallet has sufficient balance
+- Only works on Ethereum mainnet (ENS contracts are not deployed on testnets in the same way)
 
 ## Quick Start
 
