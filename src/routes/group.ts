@@ -105,6 +105,13 @@ router.post('/', async (req, res) => {
       })
     }
 
+    // Check if the name has Special characters like !@#$%^&*()_+-=[]{}|;:,.<>?
+    if (name.includes('!') || name.includes('@') || name.includes('#') || name.includes('$') || name.includes('%') || name.includes('^') || name.includes('&') || name.includes('*') || name.includes('(') || name.includes(')') || name.includes('_') || name.includes('+') || name.includes('-') || name.includes('=') || name.includes('[') || name.includes(']') || name.includes('{') || name.includes('}') || name.includes('|') || name.includes(';') || name.includes(':') || name.includes(',') || name.includes('.') || name.includes('<') || name.includes('>')) {
+      return res.status(400).json({
+        error: 'Group name cannot contain Special characters'
+      })
+    }
+
     // Only validate owner address if ENS registration is not skipped
     if (!skipEns) {
       if (!ownerAddress || typeof ownerAddress !== 'string') {
