@@ -6,6 +6,9 @@ import * as fs from 'fs'
 import * as yaml from 'js-yaml'
 import * as path from 'path'
 
+// Export Merkle Tree package
+export { MerkleTree, MerkleProof } from './merkle-tree'
+
 dotenv.config()
 
 const app = express()
