@@ -20,5 +20,18 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
+      - certbot-certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
     depends_on:
       - app
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot-certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    command: certonly --webroot --webroot-path=/var/www/certbot --email your-email@example.com --agree-tos --no-eff-email -d luftdeck.sololin.xyz
+
+volumes:
+  certbot-certs:
+  certbot-www:
