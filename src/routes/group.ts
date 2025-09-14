@@ -1,15 +1,33 @@
 import { Router } from 'express'
 import sqlite3 from 'sqlite3'
 import { MerkleTree } from '../merkle-tree'
+import { WalletService } from '../wallet-service'
 import path from 'path'
 
 const router = Router()
+
+// Initialize wallet service for ENS registration
+let walletService: WalletService | null = null
+
+const initializeWalletService = () => {
+  if (!walletService) {
+    try {
+      const PRIVATE_KEY = process.env.PRIVATE_KEY
+      const RPC_URL = process.env.RPC_URL
+      walletService = new WalletService(PRIVATE_KEY, RPC_URL)
+      console.log('✅ Group WalletService initialized for ENS registration')
+    } catch (error) {
+      console.error('❌ Failed to initialize Group WalletService:', error)
+    }
+  }
+  return walletService
+}
 
 // Initialize SQLite database
 const dbPath = path.join(process.cwd(), 'groups.db')
 const db = new sqlite3.Database(dbPath)
 
-// Create groups table if it doesn't exist
+// Create groups table if it doesn't exist and add missing columns
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS groups (
@@ -21,6 +39,31 @@ db.serialize(() => {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `)
+  
+  // Add ENS-related columns if they don't exist (for existing databases)
+  db.run(`ALTER TABLE groups ADD COLUMN ens_domain TEXT`, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      console.error('Error adding ens_domain column:', err)
+    }
+  })
+  
+  db.run(`ALTER TABLE groups ADD COLUMN ens_registration_tx TEXT`, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      console.error('Error adding ens_registration_tx column:', err)
+    }
+  })
+  
+  db.run(`ALTER TABLE groups ADD COLUMN ens_transfer_tx TEXT`, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      console.error('Error adding ens_transfer_tx column:', err)
+    }
+  })
+  
+  db.run(`ALTER TABLE groups ADD COLUMN ens_owner_address TEXT`, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      console.error('Error adding ens_owner_address column:', err)
+    }
+  })
 })
 
 interface Group {
@@ -28,6 +71,10 @@ interface Group {
   name: string
   members: string // JSON string of array
   tree_root: string | null
+  ens_domain: string | null
+  ens_registration_tx: string | null
+  ens_transfer_tx: string | null
+  ens_owner_address: string | null
   created_at: string
   updated_at: string
 }
@@ -50,12 +97,28 @@ const updateTreeRoot = (members: string[]): string | null => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { name, members = [] } = req.body
+    const { name, members = [], ownerAddress, skipEns = false } = req.body
 
     if (!name || typeof name !== 'string') {
       return res.status(400).json({
         error: 'Group name is required and must be a string'
       })
+    }
+
+    // Only validate owner address if ENS registration is not skipped
+    if (!skipEns) {
+      if (!ownerAddress || typeof ownerAddress !== 'string') {
+        return res.status(400).json({
+          error: 'Owner address is required for ENS registration'
+        })
+      }
+
+      // Validate Ethereum address format
+      if (!ownerAddress.startsWith('0x') || ownerAddress.length !== 42) {
+        return res.status(400).json({
+          error: 'Invalid Ethereum address format'
+        })
+      }
     }
 
     if (!Array.isArray(members)) {
@@ -78,12 +141,55 @@ router.post('/', async (req, res) => {
     const membersJson = JSON.stringify(uniqueMembers)
     const treeRoot = updateTreeRoot(uniqueMembers)
 
+    // Prepare ENS domain name
+    const ensDomain = `${name}`
+    
+    let ensRegistrationTx = null
+    let ensTransferTx = null
+    let ensRegistrationError = null
+
+    // Attempt ENS registration only if not skipped
+    if (!skipEns) {
+      // Initialize wallet service for ENS registration
+      const wallet = initializeWalletService()
+      if (!wallet) {
+        console.warn('⚠️ ENS registration service unavailable, skipping ENS registration')
+        ensRegistrationError = 'ENS registration service unavailable'
+      } else {
+        try {
+          console.log(`🔄 Starting ENS registration for ${ensDomain}...`)
+          
+          // Check if ENS name is available
+          const isAvailable = await wallet.isENSAvailable(ensDomain)
+          if (!isAvailable) {
+            console.warn(`⚠️ ENS domain ${ensDomain} is not available, skipping ENS registration`)
+            ensRegistrationError = `ENS domain ${ensDomain} is not available`
+          } else {
+            // Register ENS and transfer ownership to the specified address
+            const ensResult = await wallet.registerENSAndTransfer(ensDomain, ownerAddress, 1)
+            ensRegistrationTx = ensResult.registrationTx
+            
+            console.log(`✅ ENS registration successful for ${ensDomain}`)
+          }
+        } catch (ensError) {
+          console.error('ENS registration failed:', ensError)
+          ensRegistrationError = (ensError as Error).message
+          
+          // Continue with group creation even if ENS registration fails
+          // This ensures the group is still created for the user
+        }
+      }
+    } else {
+      console.log(`⏭️ Skipping ENS registration for ${ensDomain} as requested`)
+    }
+
+    // Create the group in database
     const stmt = db.prepare(`
-      INSERT INTO groups (name, members, tree_root)
-      VALUES (?, ?, ?)
+      INSERT INTO groups (name, members, tree_root, ens_domain, ens_registration_tx, ens_transfer_tx, ens_owner_address)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(name, membersJson, treeRoot, function(this: sqlite3.RunResult, err: Error | null) {
+    stmt.run(name, membersJson, treeRoot, ensDomain, ensRegistrationTx, ensTransferTx, ownerAddress, function(this: sqlite3.RunResult, err: Error | null) {
       if (err) {
         if (err.message.includes('UNIQUE constraint failed')) {
           return res.status(409).json({
@@ -97,13 +203,28 @@ router.post('/', async (req, res) => {
         })
       }
 
-      res.status(201).json({
+      const response: any = {
         name,
         members: uniqueMembers,
         tree_root: treeRoot,
         member_count: uniqueMembers.length,
+        ens_domain: ensDomain,
+        ens_owner_address: ownerAddress,
         created_at: new Date().toISOString()
-      })
+      }
+
+      // Include ENS transaction details if registration was successful
+      if (ensRegistrationTx && ensTransferTx) {
+        response.ens_registration_tx = ensRegistrationTx
+        response.ens_transfer_tx = ensTransferTx
+        response.ens_status = 'registered'
+      } else if (ensRegistrationError) {
+        response.ens_status = 'failed'
+        response.ens_error = ensRegistrationError
+      }
+
+      const statusCode = ensRegistrationError ? 207 : 201 // 207 Multi-Status if ENS failed but group created
+      res.status(statusCode).json(response)
     })
 
     stmt.finalize()
@@ -153,6 +274,10 @@ router.get('/:name', async (req, res) => {
         members,
         tree_root: row.tree_root,
         member_count: members.length,
+        ens_domain: row.ens_domain,
+        ens_registration_tx: row.ens_registration_tx,
+        ens_transfer_tx: row.ens_transfer_tx,
+        ens_owner_address: row.ens_owner_address,
         created_at: row.created_at,
         updated_at: row.updated_at
       })
@@ -454,6 +579,8 @@ router.get('/', async (req, res) => {
           name: row.name,
           member_count: members.length,
           tree_root: row.tree_root,
+          ens_domain: row.ens_domain,
+          ens_owner_address: row.ens_owner_address,
           created_at: row.created_at,
           updated_at: row.updated_at
         }

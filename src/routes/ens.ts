@@ -10,8 +10,9 @@ let ensService: WalletService | null = null
 const initializeENSService = () => {
   if (!ensService) {
     try {
-      const RPC_URL = process.env.RPC_URL
-      ensService = new WalletService(undefined, RPC_URL)
+      const PRIVATE_KEY = process.env.PRIVATE_KEY
+      const RPC_URL = process.env.RPC_URL || 'https://eth-sepolia.g.alchemy.com/v2/demo'
+      ensService = new WalletService(PRIVATE_KEY, RPC_URL)
       console.log('✅ ENS Service initialized (read-only mode)')
     } catch (error) {
       console.error('❌ Failed to initialize ENS Service:', error)
@@ -29,7 +30,7 @@ router.get('/available/:ensName', async (req, res) => {
     const { ensName } = req.params
     
     // Validate ENS name format
-    if (!ensName || !ensName.endsWith('.eth')) {
+    if (!ensName) {
       return res.status(400).json({ 
         error: 'Invalid ENS name format. Must end with .eth',
         example: 'myname.eth'
@@ -70,7 +71,7 @@ router.get('/price/:ensName', async (req, res) => {
     const { years = '1' } = req.query
     
     // Validate ENS name format
-    if (!ensName || !ensName.endsWith('.eth')) {
+    if (!ensName) {
       return res.status(400).json({ 
         error: 'Invalid ENS name format. Must end with .eth',
         example: 'myname.eth'
@@ -120,7 +121,7 @@ router.get('/resolve/:ensName', async (req, res) => {
     const { ensName } = req.params
     
     // Validate ENS name format (allow any .eth name for resolution)
-    if (!ensName || !ensName.includes('.')) {
+    if (!ensName) {
       return res.status(400).json({ 
         error: 'Invalid ENS name format',
         example: 'vitalik.eth'
@@ -217,7 +218,7 @@ router.get('/records/:ensName', async (req, res) => {
     const { texts, coins } = req.query
     
     // Validate ENS name format
-    if (!ensName || !ensName.endsWith('.eth')) {
+    if (!ensName) {
       return res.status(400).json({ 
         error: 'Invalid ENS name format. Must end with .eth',
         example: 'myname.eth'
@@ -261,7 +262,7 @@ router.get('/text/:ensName/:key', async (req, res) => {
     const { ensName, key } = req.params
     
     // Validate ENS name format
-    if (!ensName || !ensName.endsWith('.eth')) {
+    if (!ensName) {
       return res.status(400).json({ 
         error: 'Invalid ENS name format. Must end with .eth',
         example: 'myname.eth'
@@ -318,7 +319,7 @@ router.get('/coin/:ensName/:coinType', async (req, res) => {
     const { ensName, coinType } = req.params
     
     // Validate ENS name format
-    if (!ensName || !ensName.endsWith('.eth')) {
+    if (!ensName) {
       return res.status(400).json({ 
         error: 'Invalid ENS name format. Must end with .eth',
         example: 'myname.eth'
@@ -375,7 +376,7 @@ router.get('/owner/:ensName', async (req, res) => {
     const { ensName } = req.params
     
     // Validate ENS name format
-    if (!ensName || !ensName.endsWith('.eth')) {
+    if (!ensName) {
       return res.status(400).json({ 
         error: 'Invalid ENS name format. Must end with .eth',
         example: 'myname.eth'

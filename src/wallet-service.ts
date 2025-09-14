@@ -6,7 +6,7 @@ import { createWalletClient, http, createPublicClient } from 'viem'
 import { sepolia } from 'viem/chains'
 
 // ENS Registrar Controller contract address (Ethereum Sepolia Testnet)
-const ENS_REGISTRAR_CONTROLLER = '0xfb3cE5D01e0f33f41DbB39035dB9745962F1f968'
+const ENS_REGISTRAR_CONTROLLER = '0xfb3cE5D01e0f33f41DbB39035dB9745962F1f968' // ETH Registrar Controller
 // ENS Registry contract
 const ENS_REGISTRY = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e'
 
@@ -229,11 +229,6 @@ export class WalletService {
       throw new Error('Wallet and provider must be initialized for ENS registration')
     }
 
-    // Validate ENS name format
-    if (!ensName.endsWith('.eth')) {
-      throw new Error('ENS name must end with .eth')
-    }
-
     const name = ensName.replace('.eth', '')
     
     // Check if name is available
@@ -242,15 +237,15 @@ export class WalletService {
       throw new Error(`ENS name ${ensName} is not available`)
     }
     
-    // ENS Registrar Controller ABI (simplified for registration)
+    // ENS Registrar Controller ABI (Registration tuple + Price struct)
     const registrarABI = [
-      'function rentPrice(string name, uint duration) view returns (uint)',
-      'function available(string name) view returns (bool)',
-      'function makeCommitment(string name, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, bool reverseRecord, uint32 fuses, uint64 wrapperExpiry) pure returns (bytes32)',
+      'function rentPrice(string label, uint256 duration) view returns ((uint256 base, uint256 premium) price)',
+      'function available(string label) view returns (bool)',
+      'function makeCommitment((string label,address owner,uint256 duration,bytes32 secret,address resolver,bytes[] data,uint8 reverseRecord,bytes32 referrer) registration) pure returns (bytes32 commitment)',
       'function commit(bytes32 commitment)',
-      'function register(string name, address owner, uint duration, bytes32 secret, address resolver, bytes[] data, bool reverseRecord, uint32 fuses, uint64 wrapperExpiry) payable',
-      'function minCommitmentAge() view returns (uint)',
-      'function maxCommitmentAge() view returns (uint)'
+      'function register((string label,address owner,uint256 duration,bytes32 secret,address resolver,bytes[] data,uint8 reverseRecord,bytes32 referrer) registration) payable',
+      'function minCommitmentAge() view returns (uint256)',
+      'function maxCommitmentAge() view returns (uint256)'
     ]
 
     const registrarContract = new ethers.Contract(ENS_REGISTRAR_CONTROLLER, registrarABI, this.wallet)
@@ -258,27 +253,30 @@ export class WalletService {
     // Calculate registration duration in seconds
     const duration = durationInYears * 365 * 24 * 60 * 60
 
-    // Get registration price
-    const price = await registrarContract.rentPrice(name, duration)
+    // Query price (base + premium)
+    const priceStruct = await registrarContract.rentPrice(name, duration)
+    const totalPrice: bigint = (priceStruct.base as bigint) + (priceStruct.premium as bigint)
     
     // Generate a random secret for the commitment
     const secret = ethers.randomBytes(32)
     
     // Public resolver address (Ethereum Sepolia Testnet)
-    const PUBLIC_RESOLVER = '0xE99638b40E4Fff0129D56f03b55b6bbC4BBE49b5'
+    const PUBLIC_RESOLVER = '0xE99638b40E4Fff0129D56f03b55b6bbC4BBE49b5' // Public Resolver
     
-    // Make commitment
-    const commitment = await registrarContract.makeCommitment(
-      name,
-      targetAddress,
+    // Build registration tuple
+    const registration = {
+      label: name,
+      owner: targetAddress,
       duration,
       secret,
-      PUBLIC_RESOLVER,
-      [], // No additional data
-      false, // Don't set reverse record
-      0, // No fuses
-      0 // No wrapper expiry
-    )
+      resolver: PUBLIC_RESOLVER,
+      data: [] as `0x${string}`[],
+      reverseRecord: 0,
+      referrer: ethers.ZeroHash
+    }
+
+    // Make commitment
+    const commitment = await registrarContract.makeCommitment(registration)
 
     // Step 1: Commit
     console.log('🔄 Committing ENS registration...')
@@ -294,18 +292,7 @@ export class WalletService {
 
     // Step 2: Register
     console.log('🔄 Registering ENS name...')
-    const registerTx = await registrarContract.register(
-      name,
-      targetAddress,
-      duration,
-      secret,
-      PUBLIC_RESOLVER,
-      [], // No additional data
-      false, // Don't set reverse record
-      0, // No fuses
-      0, // No wrapper expiry
-      { value: price }
-    )
+    const registerTx = await registrarContract.register(registration, { value: totalPrice })
 
     console.log(`✅ ENS registration transaction sent: ${registerTx.hash}`)
     return registerTx
@@ -320,19 +307,14 @@ export class WalletService {
     if (!this.provider) {
       throw new Error('Provider not initialized')
     }
-
-    if (!ensName.endsWith('.eth')) {
-      throw new Error('ENS name must end with .eth')
-    }
-
-    const name = ensName.replace('.eth', '')
     
-    const registrarABI = ['function available(string name) view returns (bool)']
+    const registrarABI = ['function available(string label) view returns (bool)']
     
     const registrarContract = new ethers.Contract(ENS_REGISTRAR_CONTROLLER, registrarABI, this.provider)
     
     try {
-      return await registrarContract.available(name)
+      const label = ensName.replace('.eth', '')
+      return await registrarContract.available(label)
     } catch (error) {
       console.error('Error checking ENS availability:', error)
       return false
@@ -350,20 +332,17 @@ export class WalletService {
       throw new Error('Provider not initialized')
     }
 
-    if (!ensName.endsWith('.eth')) {
-      throw new Error('ENS name must end with .eth')
-    }
-
-    const name = ensName.replace('.eth', '')
+    const label = ensName.replace('.eth', '')
     const duration = durationInYears * 365 * 24 * 60 * 60
 
-    const registrarABI = ['function rentPrice(string name, uint duration) view returns (uint)']
+    const registrarABI = ['function rentPrice(string label, uint256 duration) view returns ((uint256 base, uint256 premium) price)']
     
     const registrarContract = new ethers.Contract(ENS_REGISTRAR_CONTROLLER, registrarABI, this.provider)
     
     try {
-      const price = await registrarContract.rentPrice(name, duration)
-      return ethers.formatEther(price)
+      const priceStruct = await registrarContract.rentPrice(label, duration)
+      const total: bigint = (priceStruct.base as bigint) + (priceStruct.premium as bigint)
+      return ethers.formatEther(total)
     } catch (error) {
       console.error('Error getting ENS price:', error)
       throw error
@@ -416,10 +395,6 @@ export class WalletService {
   public async setENSRecords(recordUpdate: ENSRecordUpdate): Promise<string> {
     if (!this.viemWalletClient) {
       throw new Error('Wallet client not initialized for ENS record operations')
-    }
-
-    if (!recordUpdate.name.endsWith('.eth')) {
-      throw new Error('ENS name must end with .eth')
     }
 
     try {
@@ -520,10 +495,6 @@ export class WalletService {
       throw new Error('Public client not initialized')
     }
 
-    if (!ensName.endsWith('.eth')) {
-      throw new Error('ENS name must end with .eth')
-    }
-
     try {
       const records = await getRecords(this.viemPublicClient, {
         name: ensName,
@@ -614,7 +585,7 @@ export class WalletService {
     }
 
     if (!ensName.endsWith('.eth')) {
-      throw new Error('ENS name must end with .eth')
+      ensName = `${ensName}.eth`
     }
 
     try {
@@ -626,6 +597,7 @@ export class WalletService {
       
       // Calculate the namehash for the ENS name
       const namehash = ethers.namehash(ensName)
+      console.log('namehash', namehash)
       const owner = await registry.owner(namehash)
 
       // Return null if owner is zero address (unregistered)
@@ -648,7 +620,7 @@ export class WalletService {
     }
 
     if (!ensName.endsWith('.eth')) {
-      throw new Error('ENS name must end with .eth')
+      ensName = `${ensName}.eth`
     }
 
     if (!ethers.isAddress(newOwner)) {
@@ -659,11 +631,11 @@ export class WalletService {
       // Check if we own the ENS name
       const currentOwner = await this.getENSOwner(ensName)
       if (!currentOwner) {
-        throw new Error('ENS name is not registered')
+        throw new Error(`ENS name ${ensName} is not registered or not found in registry`)
       }
 
       if (currentOwner.toLowerCase() !== this.wallet.address.toLowerCase()) {
-        throw new Error('Only the current owner can transfer ENS ownership')
+        throw new Error(`Only the current owner can transfer ENS ownership. Current owner: ${currentOwner}, Wallet: ${this.wallet.address}`)
       }
 
       const registryABI = [
@@ -698,7 +670,7 @@ export class WalletService {
     ensName: string, 
     targetAddress: string, 
     durationInYears: number = 1
-  ): Promise<{registrationTx: string, transferTx: string}> {
+  ): Promise<{registrationTx: string}> {
     if (!this.wallet || !this.provider) {
       throw new Error('Wallet and provider must be initialized for ENS registration and transfer')
     }
@@ -714,14 +686,32 @@ export class WalletService {
       console.log('⏳ Waiting for registration confirmation...')
       await registrationTx.wait()
       
-      // Step 2: Transfer ownership to target address
-      console.log(`🔄 Transferring ownership to ${targetAddress}...`)
-      const transferTx = await this.transferENSOwnership(ensName, targetAddress)
-      console.log(`✅ Transfer transaction: ${transferTx.hash}`)
-      
+      // Wait for ENS registry to propagate the ownership change
+      console.log('⏳ Waiting for ENS registry to update...')
+      let attempts = 0
+      const maxAttempts = 30 // 30 attempts with 2 second delays = 1 minute max wait
+      while (attempts < maxAttempts) {
+        try {
+          const currentOwner = await this.getENSOwner(ensName)
+          if (currentOwner && currentOwner.toLowerCase() === targetAddress.toLowerCase()) {
+            console.log(`✅ ENS ownership confirmed for ${ensName}`)
+            break
+          }
+        } catch (error) {
+          // Continue trying
+        }
+        
+        attempts++
+        if (attempts >= maxAttempts) {
+          throw new Error(`ENS registration did not propagate after ${maxAttempts * 2} seconds`)
+        }
+        
+        console.log(`⏳ Attempt ${attempts}/${maxAttempts} - waiting for ENS registry update...`)
+        await new Promise(resolve => setTimeout(resolve, 2000)) // Wait 2 seconds
+      }
+
       return {
         registrationTx: registrationTx.hash,
-        transferTx: transferTx.hash
       }
     } catch (error) {
       console.error('Error in registerENSAndTransfer:', error)
