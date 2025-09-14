@@ -764,14 +764,18 @@ export class WalletService {
    * @param ensName The ENS name to check
    * @returns True if current wallet owns the ENS name
    */
-  public async isENSOwner(ensName: string): Promise<boolean> {
+  public async isENSOwner(ensName: string, ownerAddress?: string): Promise<boolean> {
     if (!this.wallet) {
       return false
     }
 
+    if (!ensName.endsWith('.eth')) {
+      ensName = `${ensName}.eth`
+    }
+
     try {
       const owner = await this.getENSOwner(ensName)
-      return owner?.toLowerCase() === this.wallet.address.toLowerCase()
+      return owner?.toLowerCase() === (ownerAddress || this.wallet.address).toLowerCase()
     } catch (error) {
       console.error('Error checking ENS ownership:', error)
       return false

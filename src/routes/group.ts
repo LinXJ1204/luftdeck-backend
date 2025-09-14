@@ -300,7 +300,7 @@ router.get('/:name', async (req, res) => {
 router.post('/:name/member', async (req, res) => {
   try {
     const { name } = req.params
-    const { userId } = req.body
+    const { userId, ownerAddress } = req.body
 
     if (!name || typeof name !== 'string') {
       return res.status(400).json({
@@ -311,6 +311,20 @@ router.post('/:name/member', async (req, res) => {
     if (!userId || typeof userId !== 'string') {
       return res.status(400).json({
         error: 'User ID is required and must be a string'
+      })
+    }
+
+    // Check the user is owner of the group by checking the ENS owner
+    const wallet = initializeWalletService()
+    if (!wallet) {
+      return res.status(500).json({
+        error: 'Wallet service unavailable'
+      })
+    }
+    const isOwner = await wallet.isENSOwner(name, ownerAddress)
+    if (!isOwner) {
+      return res.status(403).json({
+        error: 'User is not the owner of the group'
       })
     }
 
