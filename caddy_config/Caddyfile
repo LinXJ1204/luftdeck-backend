@@ -1,0 +1,6 @@
+<domain>.<suffix> {
+    reverse_proxy app:3000 {
+      flush_interval -1
+    }
+    encode zstd gzip
+}
